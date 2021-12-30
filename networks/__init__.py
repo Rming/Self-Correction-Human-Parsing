@@ -1,9 +1,12 @@
 from __future__ import absolute_import
 
-from networks.AugmentCE2P import resnet101
+from networks.AugmentCE2P import resnet101_1out, resnet101_3out
+
 
 __factory = {
-    'resnet101': resnet101,
+    'resnet101': resnet101_1out,
+    'resnet101_1': resnet101_1out,
+    'resnet101_3': resnet101_3out,
 }
 
 
