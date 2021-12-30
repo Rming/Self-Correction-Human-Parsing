@@ -95,7 +95,14 @@ def main():
 
     model = ct.convert(
         traced_model,
-        inputs=[ct.ImageType(name="image", shape=example_input.shape)],)
+        inputs=[ct.ImageType(
+                name="image",
+                shape=example_input.shape,
+                color_layout="BGR",
+                channel_first=True,
+            )
+        ],
+    )
 
     # # Use PIL to load and resize the image to expected size.
     # example_image = Image.open("daisy.jpg").resize((224, 224))

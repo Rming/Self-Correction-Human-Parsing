@@ -127,6 +127,8 @@ def get_affine_transform(center,
     src[2:, :] = get_3rd_point(src[0, :], src[1, :])
     dst[2:, :] = get_3rd_point(dst[0, :], dst[1, :])
 
+    # print(src, dst)
+
     if inv:
         trans = cv2.getAffineTransform(np.float32(dst), np.float32(src))
     else:

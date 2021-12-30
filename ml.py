@@ -24,6 +24,7 @@ import torchvision.transforms as transforms
 import networks
 from utils.transforms import transform_logits
 from datasets.simple_extractor_dataset import SimpleFolderDataset
+import coremltools as ct
 
 dataset_settings = {
     'lip': {
@@ -101,12 +102,7 @@ def main():
     label = dataset_settings[args.dataset]['label']
     print("Evaluating total class number {} with {}".format(num_classes, label))
 
-    model = networks.init_model('resnet101', num_classes=num_classes, pretrained=None)
-
-    state_dict = torch.load(args.model_restore)
-    model.load_state_dict(state_dict)
-    model.cuda()
-    model.eval()
+    model = ct.models.MLModel("./pretrain_model/exp-schp-atr.mlmodel")
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -119,30 +115,29 @@ def main():
         os.makedirs(args.output_dir)
 
     palette = get_palette(num_classes)
-    with torch.no_grad():
-        for idx, batch in enumerate(tqdm(dataloader)):
-            image, meta = batch
-            img_name = meta['name'][0]
-            c = meta['center'].numpy()[0]
-            s = meta['scale'].numpy()[0]
-            w = meta['width'].numpy()[0]
-            h = meta['height'].numpy()[0]
+    for idx, batch in enumerate(tqdm(dataloader)):
+        image, meta = batch
+        img_name = meta['name'][0]
+        c = meta['center'].numpy()[0]
+        s = meta['scale'].numpy()[0]
+        w = meta['width'].numpy()[0]
+        h = meta['height'].numpy()[0]
 
-            output = model(image.cuda())
-            upsample = torch.nn.Upsample(size=input_size, mode='bilinear', align_corners=True)
-            upsample_output = upsample(output[0].unsqueeze(0))
-            upsample_output = upsample_output.squeeze()
-            upsample_output = upsample_output.permute(1, 2, 0)  # CHW -> HWC
+        output = model.predict(image.cuda())
+        upsample = torch.nn.Upsample(size=input_size, mode='bilinear', align_corners=True)
+        upsample_output = upsample(output[0].unsqueeze(0))
+        upsample_output = upsample_output.squeeze()
+        upsample_output = upsample_output.permute(1, 2, 0)  # CHW -> HWC
 
-            logits_result = transform_logits(upsample_output.data.cpu().numpy(), c, s, w, h, input_size=input_size)
-            parsing_result = np.argmax(logits_result, axis=2)
-            parsing_result_path = os.path.join(args.output_dir, img_name[:-4] + '.png')
-            output_img = Image.fromarray(np.asarray(parsing_result, dtype=np.uint8))
-            output_img.putpalette(palette)
-            output_img.save(parsing_result_path)
-            if args.logits:
-                logits_result_path = os.path.join(args.output_dir, img_name[:-4] + '.npy')
-                np.save(logits_result_path, logits_result)
+        logits_result = transform_logits(upsample_output.data.cpu().numpy(), c, s, w, h, input_size=input_size)
+        parsing_result = np.argmax(logits_result, axis=2)
+        parsing_result_path = os.path.join(args.output_dir, img_name[:-4] + '.png')
+        output_img = Image.fromarray(np.asarray(parsing_result, dtype=np.uint8))
+        output_img.putpalette(palette)
+        output_img.save(parsing_result_path)
+        if args.logits:
+            logits_result_path = os.path.join(args.output_dir, img_name[:-4] + '.npy')
+            np.save(logits_result_path, logits_result)
     return
 
 
