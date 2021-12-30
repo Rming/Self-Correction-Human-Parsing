@@ -13,6 +13,7 @@
 
 import os
 import torch
+import torch.nn as nn
 import argparse
 import numpy as np
 from PIL import Image
@@ -87,6 +88,24 @@ def get_palette(num_cls):
             lab >>= 3
     return palette
 
+class WrappedResnet101(nn.Module):
+    def __init__(self, num_classes, model_restore, input_size):
+        super(WrappedResnet101, self).__init__()
+        self.model = networks.init_model('resnet101', num_classes=num_classes, pretrained=None)
+        state_dict = torch.load(model_restore)
+        self.model.load_state_dict(state_dict)
+        self.model.cuda()
+        self.model.eval()
+
+        self.upsample = torch.nn.Upsample(size=input_size, mode='bilinear', align_corners=True)
+
+    def forward(self, x):
+        output = self.model(x)
+        upsample_output = self.upsample(output[0].unsqueeze(0))
+        upsample_output = upsample_output.squeeze()
+        upsample_output = upsample_output.permute(1, 2, 0)  # CHW -> HWC
+        return upsample_output
+
 
 def main():
     args = get_arguments()
@@ -101,12 +120,7 @@ def main():
     label = dataset_settings[args.dataset]['label']
     print("Evaluating total class number {} with {}".format(num_classes, label))
 
-    model = networks.init_model('resnet101', num_classes=num_classes, pretrained=None)
-
-    state_dict = torch.load(args.model_restore)
-    model.load_state_dict(state_dict)
-    model.cuda()
-    model.eval()
+    model = WrappedResnet101(num_classes, args.model_restore, input_size).eval()
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -128,11 +142,8 @@ def main():
             w = meta['width'].numpy()[0]
             h = meta['height'].numpy()[0]
 
-            output = model(image.cuda())
-            upsample = torch.nn.Upsample(size=input_size, mode='bilinear', align_corners=True)
-            upsample_output = upsample(output[0].unsqueeze(0))
-            upsample_output = upsample_output.squeeze()
-            upsample_output = upsample_output.permute(1, 2, 0)  # CHW -> HWC
+
+            upsample_output = model(image.cuda())
 
             logits_result = transform_logits(upsample_output.data.cpu().numpy(), c, s, w, h, input_size=input_size)
             parsing_result = np.argmax(logits_result, axis=2)

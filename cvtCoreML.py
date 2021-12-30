@@ -12,6 +12,7 @@
 """
 
 import os
+import json
 import torch
 import torch.nn as nn
 import argparse
@@ -67,6 +68,27 @@ def get_arguments():
 
 
 
+
+class WrappedResnet101(nn.Module):
+    def __init__(self, num_classes, model_restore, input_size):
+        super(WrappedResnet101, self).__init__()
+        self.model = networks.init_model('resnet101', num_classes=num_classes, pretrained=None)
+        state_dict = torch.load(model_restore)
+        self.model.load_state_dict(state_dict)
+        self.model.cuda()
+        self.model.eval()
+
+        self.upsample = torch.nn.Upsample(size=input_size, mode='bilinear', align_corners=True)
+
+    def forward(self, x):
+        output = self.model(x)
+        upsample_output = self.upsample(output[0].unsqueeze(0))
+        upsample_output = upsample_output.squeeze()
+        upsample_output = upsample_output.permute(1, 2, 0)  # CHW -> HWC
+        return upsample_output
+
+
+
 def main():
     args = get_arguments()
 
@@ -75,20 +97,13 @@ def main():
     if not args.gpu == 'None':
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
+    model_path = "./pretrain_model/exp-schp-atr.mlmodel"
     num_classes = dataset_settings[args.dataset]['num_classes']
     input_size = dataset_settings[args.dataset]['input_size']
     label = dataset_settings[args.dataset]['label']
     print("Evaluating total class number {} with {}".format(num_classes, label))
 
-    model = networks.init_model('resnet101', num_classes=num_classes, pretrained=None)
-
-    # print(torch.load(args.model_restore).keys())
-
-    state_dict = torch.load(args.model_restore)
-    model.load_state_dict(state_dict)
-    model.cuda()
-    model.eval()
-
+    model = WrappedResnet101(num_classes, args.model_restore, input_size).eval()
 
     example_input = torch.rand(1, 3, input_size[0], input_size[1]).cuda()
     traced_model = torch.jit.trace(model, example_input)
@@ -110,7 +125,42 @@ def main():
     # # Make a prediction using Core ML.
     # out_dict = model.predict({input_name: example_image})
 
-    model.save("./pretrain_model/exp-schp-atr.mlmodel")
+    model.save(model_path)
+
+
+    # rename output
+    ###################################################
+    # get model specification
+    mlmodel = ct.models.MLModel(str(model_path))
+    spec = mlmodel.get_spec()
+
+    # get list of current output_names
+    current_output_names = mlmodel.output_description._fd_spec
+
+    # rename first output in list to new_output_name
+    old_name = current_output_names[0].name
+    new_name = "fushion"
+    ct.utils.rename_feature(
+        spec, old_name, new_name, rename_outputs=True
+    )
+
+    # overwite existing model spec with new renamed spec
+    new_model = ct.models.MLModel(spec)
+    new_model.save(model_path)
+
+    # xcode preview metadata
+    ###################################################
+    # Load the saved model
+    mlmodel = ct.models.MLModel(model_path)
+
+    # Add new metadata for preview in Xcode
+    labels_json = {"labels": dataset_settings[args.dataset]["label"]}
+
+    mlmodel.user_defined_metadata["com.apple.coreml.model.preview.type"] = "imageSegmenter"
+    mlmodel.user_defined_metadata['com.apple.coreml.model.preview.params'] = json.dumps(labels_json)
+
+    mlmodel.save(model_path)
+
 
 if __name__ == '__main__':
     main()
