@@ -108,11 +108,16 @@ def main():
     example_input = torch.rand(1, 3, input_size[0], input_size[1]).cuda()
     traced_model = torch.jit.trace(model, example_input)
 
+    # https://coremltools.readme.io/docs/image-inputs#preprocessing-for-torch
+    scale = 1/(0.226*255.0)
+    bias = [- 0.485/(0.229) , - 0.456/(0.224), - 0.406/(0.225)]
     model = ct.convert(
         traced_model,
         inputs=[ct.ImageType(
                 name="image",
                 shape=example_input.shape,
+                scale=scale,
+                bias=bias,
                 color_layout="BGR",
                 channel_first=True,
             )
