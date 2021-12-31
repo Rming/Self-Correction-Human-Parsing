@@ -66,9 +66,7 @@ class SimpleFolderDataset(data.Dataset):
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=(0, 0, 0))
 
-        print("1", input.shape)
         input = self.transform(input)
-        print("2", input.shape)
         meta = {
             'name': img_name,
             'center': person_center,
